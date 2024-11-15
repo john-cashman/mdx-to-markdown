@@ -4,6 +4,7 @@ import zipfile
 import tempfile
 from pathlib import Path
 from zipfile import is_zipfile
+import shutil  # Import added for file operations
 
 # Helper functions
 def find_files(repo_path):
