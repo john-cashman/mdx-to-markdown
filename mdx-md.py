@@ -50,6 +50,21 @@ def create_output_zip(output_dir, zip_name):
     zip_file_path = shutil.make_archive(str(zip_path).replace(".zip", ""), 'zip', output_dir)
     return Path(zip_file_path)
 
+def read_file_with_fallback(file_path):
+    """
+    Read a file with a fallback to alternative encodings.
+    Tries UTF-8 first, then falls back to common encodings.
+    """
+    encodings_to_try = ['utf-8', 'latin-1', 'windows-1252']
+    for encoding in encodings_to_try:
+        try:
+            with open(file_path, "r", encoding=encoding) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    # If no encoding works, raise an error
+    raise ValueError(f"Could not decode the file: {file_path} with tried encodings.")
+
 # Streamlit App
 st.title("GitHub Repo MDX to Markdown Converter")
 
@@ -85,8 +100,11 @@ if uploaded_repo and output_file_name.strip():
 
             # Convert MDX files and save
             for mdx_file in mdx_files:
-                with open(mdx_file, "r", encoding="utf-8") as f:
-                    mdx_content = f.read()
+                try:
+                    mdx_content = read_file_with_fallback(mdx_file)
+                except ValueError as e:
+                    st.error(f"Error reading file {mdx_file}: {str(e)}")
+                    continue
 
                 markdown_content = convert_mdx_to_markdown_with_images(mdx_content, image_files, mdx_file)
                 output_file_path = output_dir / mdx_file.name.replace(".mdx", ".md")
