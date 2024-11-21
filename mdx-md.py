@@ -24,19 +24,6 @@ st.markdown(
         margin-bottom: 1em;
         text-align: center;
     }
-    .btn-upload {
-        margin: 0.5em 0;
-        background-color: #6c63ff;
-        color: white;
-        border: none;
-        border-radius: 5px;
-        font-size: 1em;
-        padding: 0.6em 1.5em;
-        cursor: pointer;
-    }
-    .btn-upload:hover {
-        background-color: #5753b5;
-    }
     .divider {
         margin: 2em 0;
         border: 0.5px solid #ddd;
@@ -83,19 +70,18 @@ def read_file_with_fallback(file_path):
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
 
-def convert_mdx_to_markdown_with_images(content, image_files, mdx_file_path):
+def convert_mdx_to_markdown_with_images(content, image_files, mdx_file_path, images_folder):
     """
-    Convert MDX content to Markdown, adjusting image references if needed.
+    Convert MDX content to Markdown, adjusting image references to use the `images` folder.
     """
     # Placeholder: This is where actual MDX to Markdown conversion happens
     markdown_content = content
 
-    # Adjust image references if images are in the same directory
+    # Adjust image references
     for image in image_files:
         if image.parent == mdx_file_path.parent:
-            markdown_content = markdown_content.replace(
-                str(image.name), f"./{image.name}"
-            )
+            image_relative_path = f"./images/{image.name}"
+            markdown_content = markdown_content.replace(str(image.name), image_relative_path)
 
     return markdown_content
 
@@ -133,10 +119,6 @@ def create_output_zip(output_dir, zip_name):
     return zip_path
 
 if uploaded_repo and output_file_name.strip():
-    # Create a progress bar
-    progress_bar = st.progress(0)
-    progress_bar.progress(10)
-
     # Start processing
     st.info("Processing your uploaded repository...")
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -144,8 +126,6 @@ if uploaded_repo and output_file_name.strip():
         zip_path = Path(tmpdirname) / "uploaded_repo.zip"
         with open(zip_path, "wb") as f:
             f.write(uploaded_repo.read())
-        
-        progress_bar.progress(30)
 
         # Validate if the file is a ZIP file
         if not is_zipfile(zip_path):
@@ -159,7 +139,6 @@ if uploaded_repo and output_file_name.strip():
 
             repo_path = Path(tmpdirname)
             st.success("Repository uploaded and extracted successfully!")
-            progress_bar.progress(50)
 
             # Find MDX, image, and mint.json files
             mdx_files, image_files, mint_file = find_files(repo_path)
@@ -167,6 +146,14 @@ if uploaded_repo and output_file_name.strip():
             # Prepare output directory
             output_dir = Path(tmpdirname) / "converted_repo"
             output_dir.mkdir()
+
+            # Create images folder
+            images_folder = output_dir / "images"
+            images_folder.mkdir()
+
+            # Copy all images to the images folder
+            for image_file in image_files:
+                shutil.copy(image_file, images_folder)
 
             # Convert MDX files and save
             mdx_to_md_map = {}
@@ -177,7 +164,7 @@ if uploaded_repo and output_file_name.strip():
                     st.error(f"Error reading file {mdx_file}: {str(e)}")
                     continue
 
-                markdown_content = convert_mdx_to_markdown_with_images(mdx_content, image_files, mdx_file)
+                markdown_content = convert_mdx_to_markdown_with_images(mdx_content, image_files, mdx_file, images_folder)
                 output_file_path = output_dir / mdx_file.name.replace(".mdx", ".md")
                 with open(output_file_path, "w", encoding="utf-8") as f:
                     f.write(markdown_content)
@@ -193,8 +180,6 @@ if uploaded_repo and output_file_name.strip():
             with open(output_dir / "summary.md", "w", encoding="utf-8") as f:
                 f.write(summary_content)
 
-            progress_bar.progress(80)
-
             # Create ZIP for download
             zip_path = create_output_zip(output_dir, output_file_name.strip())
             with open(zip_path, "rb") as f:
@@ -205,9 +190,7 @@ if uploaded_repo and output_file_name.strip():
                     mime="application/zip",
                 )
 
-            st.success(f"Converted {len(mdx_files)} files and mint.json!")
-            progress_bar.progress(100)
-
+            st.success(f"Converted {len(mdx_files)} files and included {len(image_files)} images!")
         except zipfile.BadZipFile:
             st.error("The uploaded file is not a valid ZIP file. Please upload a valid ZIP file.")
         except Exception as e:
