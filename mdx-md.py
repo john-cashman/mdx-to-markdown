@@ -4,13 +4,15 @@ import zipfile
 import tempfile
 from pathlib import Path
 from zipfile import is_zipfile
-import shutil  # Import added for file operations
+import shutil
+import json  # For parsing mint.json
 
 # Helper functions
 def find_files(repo_path):
     """Find MDX and image files in the repo."""
     mdx_files = []
     image_files = []
+    mint_file = None
     for root, _, files in os.walk(repo_path):
         for file in files:
             full_path = Path(root) / file
@@ -18,7 +20,9 @@ def find_files(repo_path):
                 mdx_files.append(full_path)
             elif file.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
                 image_files.append(full_path)
-    return mdx_files, image_files
+            elif file == "mint.json":
+                mint_file = full_path
+    return mdx_files, image_files, mint_file
 
 def convert_mdx_to_gitbook(markdown_content):
     """Convert MDX content to GitBook-compatible Markdown."""
@@ -44,6 +48,42 @@ def generate_summary(mdx_files, output_dir):
         relative_path = os.path.relpath(mdx_file, start=output_dir)
         summary_lines.append(f"- [{converted_name}]({relative_path})")
     return "\n".join(summary_lines)
+
+def convert_mint_to_markdown(mint_json_path, output_dir, mdx_to_md_map):
+    """
+    Convert mint.json to a structured Markdown representation.
+    """
+    try:
+        with open(mint_json_path, "r", encoding="utf-8") as f:
+            mint_data = json.load(f)
+
+        def json_to_markdown(data, depth=0):
+            """Recursively convert JSON to Markdown format."""
+            markdown = ""
+            indent = "  " * depth
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    markdown += f"{indent}- **{key}**\n"
+                    markdown += json_to_markdown(value, depth + 1)
+            elif isinstance(data, list):
+                for item in data:
+                    markdown += json_to_markdown(item, depth)
+            else:
+                # Replace MDX references with MD equivalents
+                if str(data) in mdx_to_md_map:
+                    data = mdx_to_md_map[str(data)]
+                markdown += f"{indent}- {data}\n"
+            return markdown
+
+        markdown_content = "# Mint Structure\n" + json_to_markdown(mint_data)
+        mint_md_path = output_dir / "mint_structure.md"
+        with open(mint_md_path, "w", encoding="utf-8") as f:
+            f.write(markdown_content)
+
+        return mint_md_path
+    except Exception as e:
+        st.error(f"Failed to convert mint.json: {str(e)}")
+        return None
 
 def create_output_zip(output_dir, zip_name):
     """Create a ZIP archive of the output directory."""
@@ -92,14 +132,15 @@ if uploaded_repo and output_file_name.strip():
             repo_path = Path(tmpdirname)
             st.success("Repository uploaded and extracted successfully!")
 
-            # Find MDX and image files
-            mdx_files, image_files = find_files(repo_path)
+            # Find MDX, image, and mint.json files
+            mdx_files, image_files, mint_file = find_files(repo_path)
 
             # Prepare output directory
             output_dir = Path(tmpdirname) / "converted_repo"
             output_dir.mkdir()
 
             # Convert MDX files and save
+            mdx_to_md_map = {}
             for mdx_file in mdx_files:
                 try:
                     mdx_content = read_file_with_fallback(mdx_file)
@@ -111,6 +152,12 @@ if uploaded_repo and output_file_name.strip():
                 output_file_path = output_dir / mdx_file.name.replace(".mdx", ".md")
                 with open(output_file_path, "w", encoding="utf-8") as f:
                     f.write(markdown_content)
+
+                mdx_to_md_map[str(mdx_file.name)] = str(output_file_path.name)
+
+            # Convert mint.json to Markdown
+            if mint_file:
+                convert_mint_to_markdown(mint_file, output_dir, mdx_to_md_map)
 
             # Generate summary file
             summary_content = generate_summary(mdx_files, output_dir)
@@ -127,7 +174,7 @@ if uploaded_repo and output_file_name.strip():
                     mime="application/zip"
                 )
 
-            st.success(f"Converted {len(mdx_files)} files and generated summary.md!")
+            st.success(f"Converted {len(mdx_files)} files and mint.json!")
 
         except zipfile.BadZipFile:
             st.error("The uploaded file is not a valid ZIP file. Please upload a valid ZIP file.")
