@@ -16,7 +16,7 @@ st.markdown(
         text-align: center;
         font-weight: bold;
         margin-bottom: 0.5em;
-        color: #6c63ff;
+        color: #FFA500;
     }
     .subheader {
         font-size: 1.2em;
