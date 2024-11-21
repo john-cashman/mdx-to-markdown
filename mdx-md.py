@@ -115,10 +115,11 @@ def convert_mint_to_markdown(mint_file_path, output_dir, mdx_to_md_map):
         f.write(markdown_content)
 
 def generate_summary(mdx_files, output_dir):
-    """Generate a summary of all converted pages."""
+    """Generate a summary of all converted pages with .md extensions."""
     summary_content = "# Summary of Converted Pages\n\n"
     for mdx_file in mdx_files:
-        summary_content += f"- {mdx_file.name}\n"
+        md_file_name = mdx_file.name.replace(".mdx", ".md")
+        summary_content += f"- {md_file_name}\n"
     return summary_content
 
 def create_output_zip(output_dir, zip_name):
@@ -203,7 +204,6 @@ if uploaded_repo and output_file_name.strip():
                     file_name=f"{output_file_name.strip()}.zip",
                     mime="application/zip",
                 )
-                st.balloons()  # Celebrate the successful conversion
 
             st.success(f"Converted {len(mdx_files)} files and mint.json!")
             progress_bar.progress(100)
