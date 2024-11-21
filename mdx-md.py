@@ -16,7 +16,7 @@ st.markdown(
         text-align: center;
         font-weight: bold;
         margin-bottom: 0.5em;
-        color: #FFA500;
+        color: #6c63ff;
     }
     .subheader {
         font-size: 1.2em;
@@ -55,6 +55,81 @@ output_file_name = st.text_input("Enter a name for the output ZIP file (without 
 
 # Divider
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+def find_files(repo_path):
+    """Find MDX, image files, and mint.json in the extracted repository."""
+    mdx_files = []
+    image_files = []
+    mint_file = None
+
+    for root, _, files in os.walk(repo_path):
+        for file in files:
+            full_path = Path(root) / file
+            if file.endswith(".mdx"):
+                mdx_files.append(full_path)
+            elif file.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
+                image_files.append(full_path)
+            elif file == "mint.json":
+                mint_file = full_path
+
+    return mdx_files, image_files, mint_file
+
+def read_file_with_fallback(file_path):
+    """Read a file and handle different encodings."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        with open(file_path, "r", encoding="latin-1") as f:
+            return f.read()
+
+def convert_mdx_to_markdown_with_images(content, image_files, mdx_file_path):
+    """
+    Convert MDX content to Markdown, adjusting image references if needed.
+    """
+    # Placeholder: This is where actual MDX to Markdown conversion happens
+    markdown_content = content
+
+    # Adjust image references if images are in the same directory
+    for image in image_files:
+        if image.parent == mdx_file_path.parent:
+            markdown_content = markdown_content.replace(
+                str(image.name), f"./{image.name}"
+            )
+
+    return markdown_content
+
+def convert_mint_to_markdown(mint_file_path, output_dir, mdx_to_md_map):
+    """Convert mint.json structure to Markdown."""
+    with open(mint_file_path, "r", encoding="utf-8") as f:
+        mint_data = json.load(f)
+
+    markdown_content = "# Table of Contents\n\n"
+    for entry in mint_data.get("pages", []):
+        page_title = entry.get("title", "Untitled")
+        page_file = mdx_to_md_map.get(entry.get("file"), None)
+        if page_file:
+            markdown_content += f"- [{page_title}]({page_file})\n"
+
+    with open(output_dir / "mint.md", "w", encoding="utf-8") as f:
+        f.write(markdown_content)
+
+def generate_summary(mdx_files, output_dir):
+    """Generate a summary of all converted pages."""
+    summary_content = "# Summary of Converted Pages\n\n"
+    for mdx_file in mdx_files:
+        summary_content += f"- {mdx_file.name}\n"
+    return summary_content
+
+def create_output_zip(output_dir, zip_name):
+    """Create a ZIP file for the converted repo."""
+    zip_path = Path(tempfile.gettempdir()) / f"{zip_name}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(output_dir):
+            for file in files:
+                full_path = Path(root) / file
+                zipf.write(full_path, full_path.relative_to(output_dir))
+    return zip_path
 
 if uploaded_repo and output_file_name.strip():
     # Create a progress bar
