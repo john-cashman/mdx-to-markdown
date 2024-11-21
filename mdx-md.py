@@ -61,6 +61,35 @@ def process_files(all_files, repo_path, output_dir):
             st.write(f"Copying file: {file_path}")
             shutil.copy(file_path, target_path)
 
+def generate_summary(output_dir, repo_path):
+    """Generate a summary.md file that represents the folder and file structure."""
+    summary_content = []
+
+    for root, dirs, files in os.walk(output_dir):
+        relative_path = Path(root).relative_to(output_dir)
+
+        # Ignore empty directories
+        if not dirs and not files:
+            continue
+
+        # Add group (folder) to summary
+        if relative_path != Path("."):
+            indent_level = len(relative_path.parts)
+            summary_content.append(f"{'  ' * (indent_level - 1)}- **{relative_path.name}** (Group)")
+
+        # Add files as pages
+        for file in files:
+            if file.endswith(".md"):
+                file_path = Path(root) / file
+                file_relative_path = file_path.relative_to(output_dir)
+                indent_level = len(file_relative_path.parts) - 1
+                summary_content.append(f"{'  ' * indent_level}- [{file_relative_path.stem}](./{file_relative_path})")
+
+    # Write the summary.md file
+    summary_file_path = output_dir / "summary.md"
+    with open(summary_file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(summary_content))
+
 def create_output_zip(output_dir, zip_name):
     """Create a ZIP file for the converted repo."""
     zip_path = Path(tempfile.gettempdir()) / f"{zip_name}.zip"
@@ -98,6 +127,9 @@ if uploaded_repo and output_file_name.strip():
             st.write("Processing files...")
             all_files = find_files(repo_path)
             process_files(all_files, repo_path, output_dir)
+
+            st.write("Generating summary.md...")
+            generate_summary(output_dir, repo_path)
 
             # Verify that files are present in the output directory
             if not any(output_dir.iterdir()):
