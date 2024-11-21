@@ -5,43 +5,12 @@ import tempfile
 from pathlib import Path
 from zipfile import is_zipfile
 import shutil
-import json
 
-# App title and custom header
-st.markdown(
-    """
-    <style>
-    .main-header {
-        font-size: 2.5em;
-        text-align: center;
-        font-weight: bold;
-        margin-bottom: 0.5em;
-        color: #6c63ff;
-    }
-    .subheader {
-        font-size: 1.2em;
-        color: #555;
-        margin-bottom: 1em;
-        text-align: center;
-    }
-    .divider {
-        margin: 2em 0;
-        border: 0.5px solid #ddd;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Streamlit UI setup
+st.markdown("<h1 style='text-align: center; color: #6c63ff;'>GitHub Repo MDX to Markdown Converter</h1>", unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">GitHub Repo MDX to Markdown Converter</div>', unsafe_allow_html=True)
-st.markdown('<div class="subheader">Upload your GitHub repo as a ZIP file, and we will handle the rest!</div>', unsafe_allow_html=True)
-
-# File uploader
 uploaded_repo = st.file_uploader("Upload your GitHub repository as a ZIP file", type="zip")
 output_file_name = st.text_input("Enter a name for the output ZIP file (without extension):", "converted_repo")
-
-# Divider
-st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
 def find_files(repo_path):
     """Find all files in the repository."""
@@ -61,15 +30,14 @@ def read_file_with_fallback(file_path):
             return f.read()
 
 def create_output_structure(repo_path, output_dir):
-    """Replicate the directory structure in the output directory without self-duplication."""
+    """Replicate the directory structure in the output directory."""
     for root, dirs, files in os.walk(repo_path):
         relative_path = Path(root).relative_to(repo_path)
-        if output_dir in Path(root).parents:
-            continue
-        (output_dir / relative_path).mkdir(parents=True, exist_ok=True)
+        target_dir = output_dir / relative_path
+        target_dir.mkdir(parents=True, exist_ok=True)
 
 def process_files(all_files, repo_path, output_dir):
-    """Process files by converting MDX, copying images, and handling mint.json."""
+    """Process files by converting MDX, copying images, and other content."""
     images_folder = output_dir / "images"
     images_folder.mkdir(parents=True, exist_ok=True)
 
@@ -77,19 +45,20 @@ def process_files(all_files, repo_path, output_dir):
         relative_path = file_path.relative_to(repo_path)
         target_path = output_dir / relative_path
 
-        # Exclude files from the output directory
-        if output_dir in file_path.parents:
-            continue
-
-        # Process files
+        # Process MDX files
         if file_path.suffix == ".mdx":
+            st.write(f"Processing MDX file: {file_path}")
             mdx_content = read_file_with_fallback(file_path)
-            target_path = target_path.with_suffix(".md")
+            target_path = target_path.with_suffix(".md")  # Convert .mdx to .md
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(mdx_content)
+        # Copy images
         elif file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".svg"]:
-            shutil.copy(file_path, images_folder)
+            st.write(f"Copying image: {file_path}")
+            shutil.copy(file_path, images_folder / file_path.name)
+        # Copy other files
         else:
+            st.write(f"Copying file: {file_path}")
             shutil.copy(file_path, target_path)
 
 def create_output_zip(output_dir, zip_name):
@@ -121,11 +90,16 @@ if uploaded_repo and output_file_name.strip():
             output_dir = Path(tmpdirname) / "converted_repo"
             output_dir.mkdir()
 
+            # Create output structure and process files
+            st.write("Creating output folder structure...")
             create_output_structure(repo_path, output_dir)
 
+            st.write("Processing files...")
             all_files = find_files(repo_path)
             process_files(all_files, repo_path, output_dir)
 
+            # Create a summary of the output structure
+            st.write("Creating output ZIP...")
             zip_path = create_output_zip(output_dir, output_file_name.strip())
             with open(zip_path, "rb") as f:
                 st.download_button(
