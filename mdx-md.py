@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from zipfile import is_zipfile
 import shutil
+import re
 
 # Streamlit UI setup
 st.markdown("<h1 style='text-align: center; color: #6c63ff;'>GitHub Repo MDX to Markdown Converter</h1>", unsafe_allow_html=True)
@@ -29,6 +30,12 @@ def read_file_with_fallback(file_path):
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
 
+def convert_mdx_to_markdown(content):
+    """Convert MDX content to Markdown."""
+    content = re.sub(r'<[^<>]+>', '', content)  # Remove JSX/HTML-like tags
+    content = re.sub(r'{[^{}]+}', '', content)  # Remove JSX expressions
+    return content
+
 def create_output_structure(repo_path, output_dir):
     """Replicate the directory structure in the output directory."""
     for root, dirs, files in os.walk(repo_path):
@@ -49,28 +56,35 @@ def process_files(all_files, repo_path, output_dir):
         if file_path.suffix == ".mdx":
             st.write(f"Processing MDX file: {file_path}")
             mdx_content = read_file_with_fallback(file_path)
+            markdown_content = convert_mdx_to_markdown(mdx_content)
             target_path = target_path.with_suffix(".md")  # Convert .mdx to .md
+
+            # Update image references to point to the centralized images folder
+            markdown_content = re.sub(
+                r'!\[([^\]]*)\]\(([^)]+)\)',  # Match Markdown image syntax
+                lambda match: f'![{match.group(1)}](./images/{Path(match.group(2)).name})',
+                markdown_content,
+            )
+
             with open(target_path, "w", encoding="utf-8") as f:
-                f.write(mdx_content)
-        # Copy images
+                f.write(markdown_content)
+
+        # Copy images to the centralized images folder
         elif file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".svg"]:
             st.write(f"Copying image: {file_path}")
             shutil.copy(file_path, images_folder / file_path.name)
+
         # Copy other files
         else:
             st.write(f"Copying file: {file_path}")
             shutil.copy(file_path, target_path)
 
-def generate_summary(output_dir, repo_path):
+def generate_summary(output_dir):
     """Generate a summary.md file that represents the folder and file structure."""
     summary_content = []
 
     for root, dirs, files in os.walk(output_dir):
         relative_path = Path(root).relative_to(output_dir)
-
-        # Ignore empty directories
-        if not dirs and not files:
-            continue
 
         # Add group (folder) to summary
         if relative_path != Path("."):
@@ -78,7 +92,7 @@ def generate_summary(output_dir, repo_path):
             summary_content.append(f"{'  ' * (indent_level - 1)}- **{relative_path.name}** (Group)")
 
         # Add files as pages
-        for file in files:
+        for file in sorted(files):  # Sort files for consistent ordering
             if file.endswith(".md"):
                 file_path = Path(root) / file
                 file_relative_path = file_path.relative_to(output_dir)
@@ -129,7 +143,7 @@ if uploaded_repo and output_file_name.strip():
             process_files(all_files, repo_path, output_dir)
 
             st.write("Generating summary.md...")
-            generate_summary(output_dir, repo_path)
+            generate_summary(output_dir)
 
             # Verify that files are present in the output directory
             if not any(output_dir.iterdir()):
