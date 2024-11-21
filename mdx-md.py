@@ -84,9 +84,10 @@ if uploaded_repo and output_file_name.strip():
 
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdirname)
+                extracted_dir = Path(tmpdirname) / "uploaded_repo"
+                zip_ref.extractall(extracted_dir)
 
-            repo_path = Path(tmpdirname) / "uploaded_repo"
+            repo_path = extracted_dir
             output_dir = Path(tmpdirname) / "converted_repo"
             output_dir.mkdir()
 
@@ -98,9 +99,20 @@ if uploaded_repo and output_file_name.strip():
             all_files = find_files(repo_path)
             process_files(all_files, repo_path, output_dir)
 
-            # Create a summary of the output structure
+            # Verify that files are present in the output directory
+            if not any(output_dir.iterdir()):
+                st.error("The output folder is empty. Check if files were processed correctly.")
+                st.stop()
+
+            # Create a ZIP of the output directory
             st.write("Creating output ZIP...")
             zip_path = create_output_zip(output_dir, output_file_name.strip())
+
+            # Verify the ZIP file is not empty
+            if not zipfile.ZipFile(zip_path).namelist():
+                st.error("The output ZIP file is empty. Something went wrong during zipping.")
+                st.stop()
+
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Converted Repository",
