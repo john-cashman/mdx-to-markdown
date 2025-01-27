@@ -8,7 +8,7 @@ import shutil
 import re
 
 # Streamlit UI setup
-st.markdown("<h1 style='text-align: center; color: #6c63ff;'>GitHub Repo MDX to Markdown Converter</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #6c63ff;'>MDX to Markdown Converter</h1>", unsafe_allow_html=True)
 
 uploaded_repo = st.file_uploader("Upload your GitHub repository as a ZIP file", type="zip")
 output_file_name = st.text_input("Enter a name for the output ZIP file (without extension):", "converted_repo")
