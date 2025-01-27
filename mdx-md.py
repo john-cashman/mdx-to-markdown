@@ -30,10 +30,31 @@ def read_file_with_fallback(file_path):
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
 
-def convert_mdx_to_markdown(content):
-    """Convert MDX content to Markdown."""
-    content = re.sub(r'<[^<>]+>', '', content)  # Remove JSX/HTML-like tags
-    content = re.sub(r'{[^{}]+}', '', content)  # Remove JSX expressions
+def convert_mdx_to_markdown(content, images_folder, file_path):
+    """Convert MDX content to Markdown and fix image references."""
+    def replace_image_paths(match):
+        alt_text, img_path = match.groups()
+        img_name = Path(img_path).name
+        centralized_image_path = images_folder / img_name
+
+        # Copy the image to the centralized folder if it exists
+        source_image_path = file_path.parent / img_path
+        if source_image_path.exists():
+            shutil.copy(source_image_path, centralized_image_path)
+
+        return f"![{alt_text}](./images/{img_name})"
+
+    # Remove JSX/HTML-like tags and expressions
+    content = re.sub(r'<[^<>]+>', '', content)
+    content = re.sub(r'{[^{}]+}', '', content)
+
+    # Update image references
+    content = re.sub(
+        r'!\[([^\]]*)\]\(([^)]+)\)',  # Match Markdown image syntax
+        replace_image_paths,
+        content,
+    )
+
     return content
 
 def create_output_structure(repo_path, output_dir):
@@ -56,48 +77,40 @@ def process_files(all_files, repo_path, output_dir):
         if file_path.suffix == ".mdx":
             st.write(f"Processing MDX file: {file_path}")
             mdx_content = read_file_with_fallback(file_path)
-            markdown_content = convert_mdx_to_markdown(mdx_content)
+            markdown_content = convert_mdx_to_markdown(mdx_content, images_folder, file_path)
             target_path = target_path.with_suffix(".md")  # Convert .mdx to .md
-
-            # Update image references to point to the centralized images folder
-            markdown_content = re.sub(
-                r'!\[([^\]]*)\]\(([^)]+)\)',  # Match Markdown image syntax
-                lambda match: f'![{match.group(1)}](./images/{Path(match.group(2)).name})',
-                markdown_content,
-            )
 
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(markdown_content)
 
-        # Copy images to the centralized images folder
-        elif file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".svg"]:
-            st.write(f"Copying image: {file_path}")
-            shutil.copy(file_path, images_folder / file_path.name)
-
         # Copy other files
-        else:
+        elif file_path.suffix.lower() not in [".mdx"]:
             st.write(f"Copying file: {file_path}")
             shutil.copy(file_path, target_path)
 
 def generate_summary(output_dir):
-    """Generate a summary.md file that represents the folder and file structure."""
-    summary_content = []
+    """Generate a summary.md file grouped by folders."""
+    summary_content = ["# Table of Contents\n"]
 
     for root, dirs, files in os.walk(output_dir):
         relative_path = Path(root).relative_to(output_dir)
 
-        # Add group (folder) to summary
-        if relative_path != Path("."):
-            indent_level = len(relative_path.parts)
-            summary_content.append(f"{'  ' * (indent_level - 1)}- **{relative_path.name}** (Group)")
+        # Skip the root directory
+        if relative_path == Path("."):
+            continue
 
-        # Add files as pages
+        # Add group (folder) to summary
+        group_name = f"## {relative_path.name.capitalize()}\n"
+        summary_content.append(group_name)
+
+        # Add files as pages within the group
         for file in sorted(files):  # Sort files for consistent ordering
             if file.endswith(".md"):
                 file_path = Path(root) / file
                 file_relative_path = file_path.relative_to(output_dir)
-                indent_level = len(file_relative_path.parts) - 1
-                summary_content.append(f"{'  ' * indent_level}- [{file_relative_path.stem}](./{file_relative_path})")
+                summary_content.append(f"* [{file_relative_path.stem}]({file_relative_path.as_posix()})")
+
+        summary_content.append("")  # Add a blank line for readability
 
     # Write the summary.md file
     summary_file_path = output_dir / "summary.md"
