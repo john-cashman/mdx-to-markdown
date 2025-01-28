@@ -6,13 +6,16 @@ from pathlib import Path
 from zipfile import is_zipfile
 import shutil
 import re
+from bs4 import BeautifulSoup
 
 # Streamlit UI setup
-st.markdown("<h1 style='text-align: center; color: #6c63ff;'>MDX to Markdown Converter</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #6c63ff;'>GitHub Repo MDX & HTML to Markdown Converter</h1>", unsafe_allow_html=True)
 
 uploaded_repo = st.file_uploader("Upload your GitHub repository as a ZIP file", type="zip")
 output_file_name = st.text_input("Enter a name for the output ZIP file (without extension):", "converted_repo")
 
+
+# Helper Functions
 def find_files(repo_path):
     """Find all files in the repository."""
     all_files = []
@@ -20,6 +23,7 @@ def find_files(repo_path):
         for file in files:
             all_files.append(Path(root) / file)
     return all_files
+
 
 def read_file_with_fallback(file_path):
     """Read a file and handle different encodings."""
@@ -30,57 +34,79 @@ def read_file_with_fallback(file_path):
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
 
+
 def convert_mdx_to_markdown(content, images_folder, file_path):
     """Convert MDX content to Markdown and fix image references, including JSX-like tags."""
-    def replace_markdown_image_paths(match):
-        alt_text, img_path = match.groups()
-        img_name = Path(img_path).name
-        centralized_image_path = images_folder / img_name
+    content = re.sub(r'<[^<>]+>', '', content)  # Remove JSX/HTML-like tags
+    content = re.sub(r'{[^{}]+}', '', content)  # Remove JSX expressions
 
-        source_image_path = file_path.parent / img_path
-        if source_image_path.exists():
-            shutil.copy(source_image_path, centralized_image_path)
-
-        return f"![{alt_text}](./images/{img_name})"
-
-    def replace_jsx_image_paths(match):
-        img_path = match.group(1)
-        img_name = Path(img_path).name
-        centralized_image_path = images_folder / img_name
-
-        source_image_path = file_path.parent / img_path
-        if source_image_path.exists():
-            shutil.copy(source_image_path, centralized_image_path)
-
-        return f"![Image](./images/{img_name})"
-
-    # Remove JSX/HTML-like tags except for img tags
-    content = re.sub(r'<[^<>]+>', '', content)
-    content = re.sub(r'{[^{}]+}', '', content)
-
-    # Replace Markdown-style image references
+    # Replace Markdown-style image paths
     content = re.sub(
-        r'!\[([^\]]*)\]\(([^)]+)\)',  # Match Markdown image syntax
-        replace_markdown_image_paths,
+        r'!\[([^\]]*)\]\(([^)]+)\)',
+        lambda match: f'![{match.group(1)}](./images/{Path(match.group(2)).name})',
         content,
     )
 
-    # Replace JSX-style img references
+    # Replace <img> tags inside JSX-like tags
     content = re.sub(
-        r'<img\s+[^>]*src=["\']([^"\']+)["\'][^>]*>',  # Match <img> tag with src attribute
-        replace_jsx_image_paths,
+        r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>',
+        lambda match: f"![Image](./images/{Path(match.group(1)).name})",
         content,
     )
 
     return content
 
+
+def convert_html_to_markdown(html_content, images_folder, file_path):
+    """Convert HTML content to Markdown."""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    markdown_content = []
+
+    # Convert headers (h1, h2, h3, etc.)
+    for header_tag in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        level = int(header_tag.name[1])  # Extract header level
+        markdown_content.append(f"{'#' * level} {header_tag.get_text()}")
+
+    # Convert paragraphs
+    for p_tag in soup.find_all('p'):
+        markdown_content.append(p_tag.get_text())
+
+    # Convert images
+    for img_tag in soup.find_all('img'):
+        img_src = img_tag.get('src')
+        alt_text = img_tag.get('alt', '')
+        if img_src:
+            img_name = Path(img_src).name
+            centralized_image_path = images_folder / img_name
+
+            # Copy the image to the centralized folder if it exists
+            source_image_path = file_path.parent / img_src
+            if source_image_path.exists():
+                shutil.copy(source_image_path, centralized_image_path)
+
+            markdown_content.append(f"![{alt_text}](./images/{img_name})")
+
+    # Convert links
+    for a_tag in soup.find_all('a'):
+        href = a_tag.get('href')
+        text = a_tag.get_text()
+        if href:
+            markdown_content.append(f"[{text}]({href})")
+
+    # Join all Markdown parts
+    return '\n\n'.join(markdown_content)
+
+
 def create_output_structure(repo_path, output_dir):
+    """Replicate the directory structure in the output directory."""
     for root, dirs, files in os.walk(repo_path):
         relative_path = Path(root).relative_to(repo_path)
         target_dir = output_dir / relative_path
         target_dir.mkdir(parents=True, exist_ok=True)
 
+
 def process_files(all_files, repo_path, output_dir):
+    """Process files by converting MDX, HTML, copying images, and other content."""
     images_folder = output_dir / "images"
     images_folder.mkdir(parents=True, exist_ok=True)
 
@@ -88,42 +114,58 @@ def process_files(all_files, repo_path, output_dir):
         relative_path = file_path.relative_to(repo_path)
         target_path = output_dir / relative_path
 
+        # Process MDX files
         if file_path.suffix == ".mdx":
             st.write(f"Processing MDX file: {file_path}")
             mdx_content = read_file_with_fallback(file_path)
             markdown_content = convert_mdx_to_markdown(mdx_content, images_folder, file_path)
-            target_path = target_path.with_suffix(".md")
+            target_path = target_path.with_suffix(".md")  # Convert .mdx to .md
 
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(markdown_content)
-        elif file_path.suffix.lower() not in [".mdx"]:
+
+        # Process HTML files
+        elif file_path.suffix == ".html":
+            st.write(f"Processing HTML file: {file_path}")
+            html_content = read_file_with_fallback(file_path)
+            markdown_content = convert_html_to_markdown(html_content, images_folder, file_path)
+            target_path = target_path.with_suffix(".md")  # Convert .html to .md
+
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+
+        # Copy other files
+        else:
+            st.write(f"Copying file: {file_path}")
             shutil.copy(file_path, target_path)
 
+
 def generate_summary(output_dir):
-    summary_content = ["# Table of Contents\n"]
+    """Generate a summary.md file that represents the folder and file structure."""
+    summary_content = ["# Table of contents", ""]
 
     for root, dirs, files in os.walk(output_dir):
         relative_path = Path(root).relative_to(output_dir)
 
-        if relative_path == Path("."):
-            continue
+        # Add group (folder) to summary
+        if relative_path != Path("."):
+            summary_content.append(f"## {relative_path.name.capitalize()}")
 
-        group_name = f"## {relative_path.name.capitalize()}\n"
-        summary_content.append(group_name)
-
-        for file in sorted(files):
-            if file.endswith(".md"):
+        # Add files as pages
+        for file in sorted(files):  # Sort files for consistent ordering
+            if file.endswith(".md") and file != "summary.md":
                 file_path = Path(root) / file
                 file_relative_path = file_path.relative_to(output_dir)
-                summary_content.append(f"* [{file_relative_path.stem}]({file_relative_path.as_posix()})")
+                summary_content.append(f"* [{file_relative_path.stem}]({file_relative_path})")
 
-        summary_content.append("")
-
+    # Write the summary.md file
     summary_file_path = output_dir / "summary.md"
     with open(summary_file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(summary_content))
 
+
 def create_output_zip(output_dir, zip_name):
+    """Create a ZIP file for the converted repo."""
     zip_path = Path(tempfile.gettempdir()) / f"{zip_name}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(output_dir):
@@ -132,6 +174,8 @@ def create_output_zip(output_dir, zip_name):
                 zipf.write(full_path, full_path.relative_to(output_dir))
     return zip_path
 
+
+# Main Application Logic
 if uploaded_repo and output_file_name.strip():
     st.info("Processing your uploaded repository...")
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -152,11 +196,19 @@ if uploaded_repo and output_file_name.strip():
             output_dir = Path(tmpdirname) / "converted_repo"
             output_dir.mkdir()
 
+            # Create output structure and process files
+            st.write("Creating output folder structure...")
             create_output_structure(repo_path, output_dir)
+
+            st.write("Processing files...")
             all_files = find_files(repo_path)
             process_files(all_files, repo_path, output_dir)
 
+            st.write("Generating summary.md...")
             generate_summary(output_dir)
+
+            # Create a ZIP of the output directory
+            st.write("Creating output ZIP...")
             zip_path = create_output_zip(output_dir, output_file_name.strip())
 
             with open(zip_path, "rb") as f:
